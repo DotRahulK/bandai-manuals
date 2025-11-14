@@ -1,0 +1,17 @@
+# dependencies
+node_modules/
+
+# builds
+dist/
+
+# data and downloads
+data/
+downloads/
+
+# env
+.env
+.env.local
+
+# misc
+.DS_Store
+
