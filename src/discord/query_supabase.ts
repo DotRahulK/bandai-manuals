@@ -204,14 +204,14 @@ export async function searchManuals(q: string, grade?: string, limit = 5): Promi
       rows = pool.slice(0, limit);
     } else {
       let filtered = pool.filter((r) => {
-        const name = `${r.name_en || ''} ${r.name_jp || ''}`.toLowerCase();
-        return tokens.every((t) => name.includes(t));
+        const hay = `${r.grade || ''} ${r.name_en || ''} ${r.name_jp || ''}`.toLowerCase();
+        return tokens.every((t) => hay.includes(t));
       });
       if (filtered.length === 0) {
         // fallback to any-token match to still suggest something relevant
         filtered = pool.filter((r) => {
-          const name = `${r.name_en || ''} ${r.name_jp || ''}`.toLowerCase();
-          return tokens.some((t) => name.includes(t));
+          const hay = `${r.grade || ''} ${r.name_en || ''} ${r.name_jp || ''}`.toLowerCase();
+          return tokens.some((t) => hay.includes(t));
         });
       }
       rows = filtered.slice(0, limit);

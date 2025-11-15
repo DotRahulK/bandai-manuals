@@ -188,8 +188,28 @@ export async function searchManuals(q: string, grade?: string, limit = 5): Promi
   if (error) throw error;
   let rows = (data as ManualRow[]) || [];
   if (detected) rows = rows.filter((r) => matchesGrade(r, detected));
-  if ((!rows || rows.length === 0) && detected && isGradeOnlyQuery(q)) {
-    rows = await fetchByGrade(detected, limit);
+  if ((!rows || rows.length === 0) && detected) {
+    const pool = await fetchByGrade(detected, 200);
+    const tokens = stripGradeTokens(q)
+      .toLowerCase()
+      .split(/\s+/)
+      .map((t) => t.trim())
+      .filter(Boolean);
+    if (tokens.length === 0) {
+      rows = pool.slice(0, limit);
+    } else {
+      let filtered = pool.filter((r) => {
+        const hay = `${r.grade || ''} ${r.name_en || ''} ${r.name_jp || ''}`.toLowerCase();
+        return tokens.every((t) => hay.includes(t));
+      });
+      if (filtered.length === 0) {
+        filtered = pool.filter((r) => {
+          const hay = `${r.grade || ''} ${r.name_en || ''} ${r.name_jp || ''}`.toLowerCase();
+          return tokens.some((t) => hay.includes(t));
+        });
+      }
+      rows = filtered.slice(0, limit);
+    }
   }
   return rows;
 }
