@@ -195,7 +195,7 @@ export async function searchManuals(q: string, grade?: string, limit = 5): Promi
   let rows = (data as ManualRow[]) || [];
   if (detected) rows = rows.filter((r) => matchesGrade(r, detected));
   if ((!rows || rows.length === 0) && detected) {
-    const pool = await fetchByGrade(detected, 200);
+    const pool = await fetchByGrade(detected, 1000);
     const tokens = stripGradeTokens(q)
       .toLowerCase()
       .split(/\s+/)
@@ -229,7 +229,7 @@ export async function suggestManuals(q: string, limit = 20): Promise<Suggestion[
   const qCore = detected ? stripGradeTokens(q) : q;
   // If a grade is detected, fetch a larger pool by grade first to avoid losing older kits
   if (detected) {
-    const pool = await fetchByGrade(detected, 200);
+    const pool = await fetchByGrade(detected, 1000);
     const tokens = qCore
       .toLowerCase()
       .split(/\s+/)
