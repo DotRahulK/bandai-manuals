@@ -13,10 +13,10 @@ export class HttpClient {
   private delayMs: number;
   constructor(opts: { userAgent?: string; timeoutMs?: number; delayMs?: number; concurrency?: number } = {}) {
     const { userAgent, timeoutMs, delayMs, concurrency } = opts;
-    this.client = this.client.extend({
-      headers: userAgent ? { 'user-agent': userAgent } : undefined,
-      timeout: timeoutMs ? { request: timeoutMs } : undefined
-    });
+    const reqTimeout = timeoutMs ?? 30000;
+    const headers = userAgent ? { 'user-agent': userAgent } : undefined;
+    // Build a single client instance to keep types aligned
+    this.client = got.extend({ followRedirect: true, retry: { limit: 2 }, timeout: { request: reqTimeout }, headers });
     this.limit = pLimit(Math.max(1, concurrency ?? 4));
     this.delayMs = Math.max(0, delayMs ?? 0);
   }
@@ -44,4 +44,3 @@ export class HttpClient {
     });
   }
 }
-

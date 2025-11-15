@@ -16,10 +16,10 @@ const rest = new REST({ version: '10' }).setToken(token);
 
 async function main() {
   if (guildId) {
-    const data = (await rest.put(Routes.applicationGuildCommands(appId, guildId), { body: commandsJson })) as unknown[];
+    const data = (await rest.put(Routes.applicationGuildCommands(appId as string, guildId as string), { body: commandsJson })) as unknown[];
     console.log(`[register] registered ${data.length} guild commands to ${guildId}`);
   } else {
-    const data = (await rest.put(Routes.applicationCommands(appId), { body: commandsJson })) as unknown[];
+    const data = (await rest.put(Routes.applicationCommands(appId as string), { body: commandsJson })) as unknown[];
     console.log(`[register] registered ${data.length} global commands (may take up to 1 hour to propagate)`);
   }
 }
@@ -28,4 +28,3 @@ main().catch((e) => {
   console.error('[register] failed', e);
   process.exit(1);
 });
-
