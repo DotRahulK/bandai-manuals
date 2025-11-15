@@ -205,16 +205,33 @@ export async function suggestManuals(q: string, limit = 20): Promise<Suggestion[
   const supabase = getClient();
   const detected = parseGradeFromQuery(q);
   const qCore = detected ? stripGradeTokens(q) : q;
+  // If a grade is detected, fetch a larger pool by grade first to avoid losing older kits
+  if (detected) {
+    const pool = await fetchByGrade(detected, 200);
+    const tokens = qCore
+      .toLowerCase()
+      .split(/\s+/)
+      .map((t) => t.trim())
+      .filter(Boolean);
+    let filtered = pool;
+    if (tokens.length) {
+      filtered = pool.filter((r) => {
+        const name = `${r.name_en || ''} ${r.name_jp || ''}`.toLowerCase();
+        return tokens.every((t) => name.includes(t));
+      });
+    }
+    const rows = filtered.slice(0, Math.max(1, Math.min(20, limit)));
+    return rows.map((r) => {
+      const label = r.name_en || r.name_jp || `Manual ${r.manual_id}`;
+      return { name: label, value: String(r.manual_id) };
+    });
+  }
+
   const { data, error } = await supabase.rpc('suggest_manuals', { q: qCore, p_limit: Math.max(1, Math.min(20, limit)) });
   if (error) throw error;
-  let rows = (data as any[]) || [];
-  if (detected) rows = rows.filter((r: any) => matchesGrade(r as ManualRow, detected));
-  if ((!rows || rows.length === 0) && detected && isGradeOnlyQuery(q)) {
-    const fetched = await fetchByGrade(detected, limit);
-    rows = fetched.map((r) => ({ manual_id: r.manual_id, name_en: r.name_en, name_jp: r.name_jp, grade: r.grade }));
-  }
+  const rows = (data as any[]) || [];
   return rows.map((r) => {
-    const label = `${r.grade ? r.grade + ' ' : ''}${r.name_en || r.name_jp || 'Manual'} [${r.manual_id}]`;
+    const label = r.name_en || r.name_jp || `Manual ${r.manual_id}`;
     return { name: label, value: String(r.manual_id) };
   });
 }

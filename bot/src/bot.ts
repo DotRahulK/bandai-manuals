@@ -45,14 +45,29 @@ client.on('interactionCreate', async (interaction) => {
 });
 
 function formatRelease(dateVal: unknown, text: string | null | undefined): string {
+  const fromYMD = (s: string) => (/(\d{4})-(\d{2})-(\d{2})/.test(s) ? s : null);
+  const fromJP = (s: string) => {
+    const cleaned = s.replace(/発売/g, '');
+    const m = cleaned.match(/(\d{4})年\s*(\d{1,2})月(?:\s*(\d{1,2})日)?/);
+    if (!m) return null;
+    const y = m[1];
+    const mo = m[2].padStart(2, '0');
+    const d = m[3] ? m[3].padStart(2, '0') : null;
+    return d ? `${y}-${mo}-${d}` : `${y}-${mo}`;
+  };
+
   if (dateVal instanceof Date) {
     const y = dateVal.getFullYear();
     const m = String(dateVal.getMonth() + 1).padStart(2, '0');
     const d = String(dateVal.getDate()).padStart(2, '0');
     return `${y}-${m}-${d}`;
   }
-  if (typeof dateVal === 'string' && dateVal.trim().length > 0) return dateVal;
-  if (typeof text === 'string' && text.trim().length > 0) return text;
+  if (typeof dateVal === 'string' && dateVal.trim()) {
+    return fromYMD(dateVal) || fromJP(dateVal) || dateVal.trim();
+  }
+  if (typeof text === 'string' && text.trim()) {
+    return fromJP(text.trim()) || text.trim();
+  }
   return '—';
 }
 
