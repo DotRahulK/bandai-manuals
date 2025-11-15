@@ -101,6 +101,32 @@ function matchesGrade(row: ManualRow, code: string): boolean {
   return syns.some((s) => containsToken(ne, s) || containsToken(nj, s));
 }
 
+function stripGradeTokens(q: string): string {
+  let s = q;
+  const reps: Array<RegExp> = [
+    /\bentry\s*grade\b/gi,
+    /\bhigh\s*grade\b/gi,
+    /\bmaster\s*grade\b/gi,
+    /\breal\s*grade\b/gi,
+    /\bperfect\s*grade\b/gi,
+    /\bfull\s*mechanics\b/gi,
+    /\bre\s*\/?\s*100\b/gi,
+    /\bmg\s*ex\b/gi,
+    /\bmg\s*sd\b/gi,
+    /\bmgex\b/gi,
+    /\bmgsd\b/gi,
+    /\beg\b/gi,
+    /\bhg\b/gi,
+    /\bmg\b/gi,
+    /\brg\b/gi,
+    /\bpg\b/gi,
+    /\bsdcs\b/gi,
+    /\bsd\b/gi
+  ];
+  for (const re of reps) s = s.replace(re, ' ');
+  return s.replace(/\s+/g, ' ').trim();
+}
+
 function isGradeOnlyQuery(q: string): boolean {
   const gradeWords = new Set([
     'eg', 'entry', 'grade',
@@ -123,7 +149,7 @@ async function fetchByGrade(code: string, limit = 20): Promise<ManualRow[]> {
   const ors: string[] = [];
   for (const s of syns) {
     const esc = s.replace(/,/g, '');
-    ors.push(`grade.eq.${esc}`);
+    ors.push(`grade.ilike.${esc}`);
     ors.push(`name_en.ilike.%${esc}%`);
     ors.push(`name_jp.ilike.%${esc}%`);
   }
@@ -156,10 +182,11 @@ export async function getManualById(id: number): Promise<ManualRow | null> {
 
 export async function searchManuals(q: string, grade?: string, limit = 5): Promise<ManualRow[]> {
   const sb = getClient();
-  const { data, error } = await sb.rpc('search_manuals', { q, p_limit: Math.max(1, Math.min(25, limit)) });
+  const detected = grade || parseGradeFromQuery(q);
+  const qCore = detected ? stripGradeTokens(q) : q;
+  const { data, error } = await sb.rpc('search_manuals', { q: qCore, p_limit: Math.max(1, Math.min(25, limit)) });
   if (error) throw error;
   let rows = (data as ManualRow[]) || [];
-  const detected = grade || parseGradeFromQuery(q);
   if (detected) rows = rows.filter((r) => matchesGrade(r, detected));
   if ((!rows || rows.length === 0) && detected && isGradeOnlyQuery(q)) {
     rows = await fetchByGrade(detected, limit);
@@ -170,10 +197,11 @@ export async function searchManuals(q: string, grade?: string, limit = 5): Promi
 export type Suggestion = { name: string; value: string };
 export async function suggestManuals(q: string, limit = 20): Promise<Suggestion[]> {
   const sb = getClient();
-  const { data, error } = await sb.rpc('suggest_manuals', { q, p_limit: Math.max(1, Math.min(20, limit)) });
+  const detected = parseGradeFromQuery(q);
+  const qCore = detected ? stripGradeTokens(q) : q;
+  const { data, error } = await sb.rpc('suggest_manuals', { q: qCore, p_limit: Math.max(1, Math.min(20, limit)) });
   if (error) throw error;
   let rows = (data as any[]) || [];
-  const detected = parseGradeFromQuery(q);
   if (detected) rows = rows.filter((r: any) => matchesGrade(r as ManualRow, detected));
   if ((!rows || rows.length === 0) && detected && isGradeOnlyQuery(q)) {
     const fetched = await fetchByGrade(detected, limit);

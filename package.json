@@ -26,7 +26,8 @@
     "supabase:sync": "tsx src/supabase_sync.ts",
     "supabase:upload": "tsx src/upload_to_supabase.ts",
     "supabase:transfer": "tsx src/transfer_to_supabase.ts",
-    "export:csv": "tsx src/export_csv.ts"
+    "export:csv": "tsx src/export_csv.ts",
+    "supabase:fix-grades": "tsx src/supabase_fix_grades.ts"
   },
   "dependencies": {
     "cheerio": "^1.0.0",
