@@ -1,0 +1,16 @@
+[Unit]
+Description=Bandai Manuals Discord Bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/ubuntu/bandai-manuals
+EnvironmentFile=/home/ubuntu/bandai-manuals/.env
+ExecStart=/home/ubuntu/.nvm/versions/node/v20/bin/node dist/discord/bot.js
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+

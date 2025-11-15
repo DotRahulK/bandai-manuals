@@ -11,12 +11,16 @@ export type ManualRow = {
   release_date: string | null;
   release_date_text: string | null;
   image_url: string | null;
+  storage_bucket: string | null;
+  storage_path: string | null;
+  storage_public_url: string | null;
 };
 
 export async function getManualById(id: number): Promise<ManualRow | null> {
   const res = await withClient((c) =>
     c.query(
-      `SELECT manual_id, detail_url, pdf_url, pdf_local_path, name_jp, name_en, grade, release_date, release_date_text, image_url
+      `SELECT manual_id, detail_url, pdf_url, pdf_local_path, name_jp, name_en, grade, release_date, release_date_text, image_url,
+              storage_bucket, storage_path, storage_public_url
        FROM bandai.manuals WHERE manual_id = $1`,
       [id]
     )
@@ -47,7 +51,8 @@ export async function searchManuals(q: string, grade?: string, limit = 5): Promi
     where.push(`grade = $${params.length}`);
   }
   const sql = `
-    SELECT manual_id, detail_url, pdf_url, pdf_local_path, name_jp, name_en, grade, release_date, release_date_text, image_url
+    SELECT manual_id, detail_url, pdf_url, pdf_local_path, name_jp, name_en, grade, release_date, release_date_text, image_url,
+           storage_bucket, storage_path, storage_public_url
     FROM bandai.manuals
     ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
     ORDER BY COALESCE(release_date, '1900-01-01') DESC, manual_id DESC

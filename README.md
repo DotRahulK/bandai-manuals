@@ -37,6 +37,8 @@ Scripts
 - npm run populate:download — same as populate + downloads PDFs to `downloads/manuals/`
 - npm run download:db — download PDFs for rows missing `pdf_local_path`
 - npm run download:db:all — download PDFs for all rows (ignore `pdf_local_path`)
+- npm run supabase:sync — apply migrations to a Supabase Postgres and copy data from your source DB
+- npm run supabase:upload — upload local PDFs to Supabase Storage and save public URL in DB
 
 Configuration
 
@@ -53,6 +55,9 @@ Use env vars to tune behavior:
   - Optional: PGPOOL_MAX (default 10)
   - Example docker-compose service name/port: `localhost:5432`
   - The migration creates a dedicated schema `bandai` with `bandai.manuals`
+- Supabase sync envs:
+  - Target (Supabase) via `SUPABASE_DATABASE_URL` (recommended; include `?sslmode=require`) or `SUPABASE_PG*`
+  - Optional separate source via `SOURCE_DATABASE_URL` or `SOURCE_PG*` (defaults to `DATABASE_URL`/`PG*`)
 
 Download from DB options (env)
 
@@ -106,20 +111,50 @@ Notes
 - The crawler is conservative: it stays within the domain, follows likely manual/catalog paths, and records .pdf links it encounters. You can refine include/exclude patterns in src/crawler.ts if the site structure changes.
 - Be respectful: keep concurrency low, add delay, and avoid hammering the site.
 
+Supabase sync
+
+- Goal: create the same schema in Supabase and copy your local data.
+- Set target connection (Supabase):
+  - `SUPABASE_DATABASE_URL=postgresql://postgres:<PW>@db.<REF>.supabase.co:5432/postgres?sslmode=require`
+  - Or set `SUPABASE_PGHOST/PORT/USER/PASSWORD/DATABASE` and `SUPABASE_PGSSL=1`.
+- Set source connection (defaults to `DATABASE_URL`):
+  - Optionally set `SOURCE_DATABASE_URL` if your source DB differs.
+- Run:
+  - `npm run supabase:sync` — applies migrations (schema) on Supabase and copies rows in batches.
+  - `npm run supabase:sync -- --data-only` — copy data only (skip migrations).
+
+Supabase Storage (PDFs)
+
+- Goal: host PDFs in Supabase Storage and fetch from there.
+- Set env:
+  - `SUPABASE_URL` and `SUPABASE_KEY` (service role, server-side only)
+  - `SUPABASE_BUCKET` (default `manuals`) — will be created if missing (public)
+  - Optional `SUPABASE_PREFIX` to namespace keys (e.g., `bandai`)
+- Upload:
+  - Ensure local files exist under `FILES_ROOT/SUBDIR` and `bandai.manuals.pdf_local_path` is populated.
+  - Run: `npm run supabase:upload`
+  - It uploads PDFs and updates `bandai.manuals` with `storage_bucket`, `storage_path`, `storage_public_url`, size, and timestamp.
+- Bot behavior:
+  - If local file is missing, the bot will try `storage_public_url` and upload the PDF (within `ATTACH_MAX_MB`).
+  - Prefer keeping the bucket public for simple access; otherwise you’ll need to generate signed URLs server-side.
+
 Discord bot
 
 - Commands
-  - /manual id:<number> attach:<bool?> — show a single manual by ID; can attach local PDF if available
-  - /find q:<text> grade:<text?> limit:<number?> — search manuals and list results with links
+  - /manual q:<text|id> attach:<bool?> — pick from suggestions or enter an ID; uploads the PDF when available
 - Setup
   - Create a Discord application + bot, invite with `applications.commands` and `bot` permissions.
-  - Set env: `DISCORD_TOKEN`, `DISCORD_APP_ID`, optionally `DISCORD_GUILD_ID` for faster command registration.
+  - Choose data source:
+    - Supabase (recommended): set `SUPABASE_URL` and `SUPABASE_KEY` (service role) — the bot queries `bandai.manuals` via supabase-js.
+    - Postgres (fallback): set `DATABASE_URL` (or PG* envs) — the bot queries via pg.
+  - Set bot env: `DISCORD_TOKEN`, `DISCORD_APP_ID`, optionally `DISCORD_GUILD_ID` for faster command registration.
   - Register slash commands: `npm run bot:register`
 - Run bot: `npm run bot`
 - Env for attachments
   - `ATTACH_IF_LOCAL=1` to attach local PDFs when `pdf_local_path` exists.
   - `ATTACH_MAX_MB` to cap attachment size (default 8MB). Larger files are linked instead.
   - Uses `FILES_ROOT` + `SUBDIR` to find files (see earlier section).
+  - If a local file is missing, and Supabase Storage columns are set, the bot downloads from `storage_public_url` (or computes it from `storage_bucket` + `storage_path`) and uploads the PDF in the same message (subject to size cap).
 
 Free hosting ideas
 

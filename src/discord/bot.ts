@@ -4,9 +4,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { Client, GatewayIntentBits, ChatInputCommandInteraction, AttachmentBuilder, EmbedBuilder, Partials } from 'discord.js';
 import { commands } from './commands.js';
-import { getManualById, searchManuals, suggestManuals } from './query.js';
+import * as PgQ from './query.js';
+import * as SbQ from './query_supabase.js';
 import { absFromRel } from '../paths.js';
-import { withClient } from '../db.js';
 import { HttpClient } from '../http.js';
 
 const token = process.env.DISCORD_TOKEN || process.env.BOT_TOKEN;
@@ -23,6 +23,10 @@ const DOWNLOAD_ON_DEMAND = (process.env.DOWNLOAD_ON_DEMAND || '0') === '1';
 
 const http = new HttpClient({ concurrency: 2, delayMs: 0 });
 
+const forceSb = (process.env.USE_SUPABASE_JS === '1') || (process.env.FORCE_SUPABASE === '1');
+const haveSbCreds = Boolean(process.env.SUPABASE_URL && (process.env.SUPABASE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY));
+const useSupabase = forceSb || haveSbCreds;
+
 const client = new Client({
   intents: [GatewayIntentBits.Guilds],
   partials: [Partials.Channel]
@@ -37,12 +41,7 @@ client.on('interactionCreate', async (interaction) => {
     try {
       const focused = interaction.options.getFocused(true);
       if (interaction.commandName === 'manual' && focused.name === 'q') {
-        const list = await suggestManuals(focused.value);
-        await interaction.respond(list);
-        return;
-      }
-      if (interaction.commandName === 'find' && focused.name === 'q') {
-        const list = await suggestManuals(focused.value);
+        const list = useSupabase ? await SbQ.suggestManuals(focused.value) : await PgQ.suggestManuals(focused.value);
         await interaction.respond(list);
         return;
       }
@@ -55,8 +54,6 @@ client.on('interactionCreate', async (interaction) => {
   try {
     if (interaction.commandName === 'manual') {
       await handleManual(interaction);
-    } else if (interaction.commandName === 'find') {
-      await handleFind(interaction);
     }
   } catch (e) {
     console.error('[bot] handler error', e);
@@ -102,13 +99,13 @@ async function handleManual(interaction: ChatInputCommandInteraction) {
   await interaction.deferReply();
   let id: number | null = null;
   if (/^\d+$/.test(qVal)) id = parseInt(qVal, 10);
-  let row = id ? await getManualById(id) : null;
+  let row = id ? (useSupabase ? await SbQ.getManualById(id) : await PgQ.getManualById(id)) : null;
   if (!row) {
     // If user typed arbitrary text instead of picking suggestion, pick best suggestion
-    const sug = await suggestManuals(qVal, 1);
+    const sug = useSupabase ? await SbQ.suggestManuals(qVal, 1) : await PgQ.suggestManuals(qVal, 1);
     if (sug.length) {
       id = parseInt(sug[0].value, 10);
-      row = await getManualById(id);
+      row = useSupabase ? await SbQ.getManualById(id) : await PgQ.getManualById(id);
     }
   }
   if (!row) {
@@ -130,6 +127,46 @@ async function handleManual(interaction: ChatInputCommandInteraction) {
         : path.resolve(row.pdf_local_path);
       if (fs.existsSync(legacyAbs)) abs = legacyAbs;
     }
+  }
+
+  // If not found locally, try Supabase public URL (if present)
+  if (!abs && row.storage_public_url) {
+    try {
+      const h = await http.head(row.storage_public_url);
+      const cl = h.headers['content-length'];
+      const size = Array.isArray(cl) ? parseInt(cl[0] || '0', 10) : parseInt((cl as string) || '0', 10);
+      if (!Number.isNaN(size) && size > 0 && size <= ATTACH_MAX_BYTES) {
+        const tmp = path.join(process.cwd(), '.tmp');
+        await fs.promises.mkdir(tmp, { recursive: true });
+        const name = `${row.manual_id}.pdf`;
+        const out = path.join(tmp, name);
+        await http.download(row.storage_public_url, tmp, name);
+        abs = out;
+      }
+    } catch {}
+  }
+
+  // If still not found and we have bucket + path, derive public URL via Supabase
+  if (!abs && useSupabase && row.storage_bucket && row.storage_path) {
+    try {
+      const { createClient } = await import('@supabase/supabase-js');
+      const supabase = createClient(process.env.SUPABASE_URL!, (process.env.SUPABASE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY)!);
+      const { data } = supabase.storage.from(row.storage_bucket).getPublicUrl(row.storage_path);
+      const url = data?.publicUrl;
+      if (url) {
+        const h = await http.head(url);
+        const cl = h.headers['content-length'];
+        const size = Array.isArray(cl) ? parseInt(cl[0] || '0', 10) : parseInt((cl as string) || '0', 10);
+        if (!Number.isNaN(size) && size > 0 && size <= ATTACH_MAX_BYTES) {
+          const tmp = path.join(process.cwd(), '.tmp');
+          await fs.promises.mkdir(tmp, { recursive: true });
+          const name = `${row.manual_id}.pdf`;
+          const out = path.join(tmp, name);
+          await http.download(url, tmp, name);
+          abs = out;
+        }
+      }
+    } catch {}
   }
 
   if (!abs && (ALWAYS_UPLOAD || attachOpt) && DOWNLOAD_ON_DEMAND && row.pdf_url) {
@@ -160,26 +197,6 @@ async function handleManual(interaction: ChatInputCommandInteraction) {
   await interaction.editReply({ embeds: eb ? [eb] : [], files });
 }
 
-async function handleFind(interaction: ChatInputCommandInteraction) {
-  const q = interaction.options.getString('q', true);
-  const grade = interaction.options.getString('grade') || undefined;
-  const limit = interaction.options.getInteger('limit') || 5;
-  await interaction.deferReply({ ephemeral: true });
-  const rows = await searchManuals(q, grade, limit);
-  if (!rows.length) {
-    await interaction.editReply({ content: `No results for “${q}”.` });
-    return;
-  }
-  const lines = rows.map((r) => {
-    const name = r.name_en || r.name_jp || `Manual ${r.manual_id}`;
-    const pdf = r.pdf_url || `https://manual.bandai-hobby.net/pdf/${r.manual_id}.pdf`;
-    const parts = [
-      `• ${name} (ID ${r.manual_id}${r.grade ? ` · ${r.grade}` : ''}${r.release_date ? ` · ${r.release_date}` : ''})`,
-      `[PDF](${pdf})${r.detail_url ? ` · [Detail](${r.detail_url})` : ''}`
-    ];
-    return parts.join('\n');
-  });
-  await interaction.editReply({ content: lines.join('\n\n') });
-}
+// find command removed
 
 client.login(token);

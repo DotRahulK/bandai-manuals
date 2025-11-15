@@ -7,6 +7,8 @@ dist/
 # data and downloads
 data/
 downloads/
+.tmp/
+exports/
 
 # env
 .env
@@ -14,4 +16,3 @@ downloads/
 
 # misc
 .DS_Store
-

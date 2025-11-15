@@ -56,3 +56,29 @@ export function matchesNone(value: string, patterns?: (string | RegExp)[]): bool
   return true;
 }
 
+// Sanitize a string to be used as a Supabase Storage key segment (ASCII-friendly)
+export function sanitizeStorageKeyPart(input: string): string {
+  const romanMap: Record<string, string> = {
+    'Ⅰ': 'I',
+    'Ⅱ': 'II',
+    'Ⅲ': 'III',
+    'Ⅳ': 'IV',
+    'Ⅴ': 'V',
+    'Ⅵ': 'VI',
+    'Ⅶ': 'VII',
+    'Ⅷ': 'VIII',
+    'Ⅸ': 'IX',
+    'Ⅹ': 'X'
+  };
+  let s = input.replace(/[ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ]/g, (ch) => romanMap[ch] || ch);
+  // Remove diacritics and convert to ASCII-safe set
+  s = s
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '') // combining marks
+    .replace(/[^A-Za-z0-9._ \-]+/g, '-') // non-ASCII or disallowed
+    .replace(/\s+/g, ' ')
+    .replace(/-+/g, '-')
+    .trim()
+    .replace(/^[-. ]+|[-. ]+$/g, '');
+  return s || 'file';
+}
