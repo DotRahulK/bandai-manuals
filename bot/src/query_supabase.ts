@@ -28,7 +28,9 @@ function parseGradeFromQuery(q: string): string | null {
   const s = q.toLowerCase();
   const checks: Array<{ re: RegExp; code: string }> = [
     { re: /\bmg\s*ex\b/, code: 'MGEX' },
+    { re: /\bmgex\b/, code: 'MGEX' },
     { re: /\bmg\s*sd\b/, code: 'MGSD' },
+    { re: /\bmgsd\b/, code: 'MGSD' },
     { re: /\bmaster\s+grade\b/, code: 'MG' },
     { re: /\breal\s+grade\b/, code: 'RG' },
     { re: /\bhigh\s+grade\b/, code: 'HG' },
@@ -37,13 +39,11 @@ function parseGradeFromQuery(q: string): string | null {
     { re: /\bfull\s+mechanics\b/, code: 'FM' },
     { re: /\bperfect\s+grade\b/, code: 'PG' },
     { re: /\bsd\s*cs\b/, code: 'SDCS' },
-    { re: /\bmgex\b/, code: 'MGEX' },
-    { re: /\bmgsd\b/, code: 'MGSD' },
-    { re: /\beg\b|\bentry\b/, code: 'EG' },
-    { re: /\bhg\b|\bhigh\b/, code: 'HG' },
-    { re: /\brg\b|\breal\b/, code: 'RG' },
-    { re: /\bmg\b|\bmaster\b/, code: 'MG' },
-    { re: /\bpg\b|\bperfect\b/, code: 'PG' },
+    { re: /\beg\b/, code: 'EG' },
+    { re: /\bhg\b/, code: 'HG' },
+    { re: /\brg\b/, code: 'RG' },
+    { re: /\bmg\b/, code: 'MG' },
+    { re: /\bpg\b/, code: 'PG' },
     { re: /\bsdcs\b/, code: 'SDCS' },
     { re: /\bsd\b/, code: 'SD' }
   ];
@@ -90,6 +90,46 @@ function matchesGrade(row: ManualRow, code: string): boolean {
   return syns.some((s) => ne.includes(s) || nj.includes(s));
 }
 
+function isGradeOnlyQuery(q: string): boolean {
+  const gradeWords = new Set([
+    'eg', 'entry', 'grade',
+    'hg', 'high',
+    'mg', 'master',
+    'rg', 'real',
+    'pg', 'perfect',
+    'fm', 'full', 'mechanics', 'fullmechanics',
+    're', 're/100', 're-100', 're:100', '100',
+    'sd', 'sdcs', 'cs',
+    'mgex', 'ex', 'mgsd'
+  ]);
+  const tokens = (q.toLowerCase().match(/\b[\p{L}0-9]+\b/gu) || []).filter((t) => !gradeWords.has(t));
+  return tokens.length === 0;
+}
+
+async function fetchByGrade(code: string, limit = 20): Promise<ManualRow[]> {
+  const sb = getClient();
+  const syns = gradeSynonyms(code);
+  const ors: string[] = [];
+  for (const s of syns) {
+    const esc = s.replace(/,/g, '');
+    ors.push(`grade.eq.${esc}`);
+    ors.push(`name_en.ilike.%${esc}%`);
+    ors.push(`name_jp.ilike.%${esc}%`);
+  }
+  const { data, error } = await sb
+    .from('manuals')
+    .select(
+      'manual_id, detail_url, pdf_url, pdf_local_path, name_jp, name_en, grade, release_date, release_date_text, image_url, storage_bucket, storage_path, storage_public_url'
+    )
+    .or(ors.join(','))
+    .order('release_date', { ascending: false, nullsFirst: true })
+    .order('manual_id', { ascending: false })
+    .limit(Math.max(1, Math.min(50, limit)));
+  if (error) throw error;
+  const rows = (data as ManualRow[]) || [];
+  return rows.filter((r) => matchesGrade(r, code));
+}
+
 export async function getManualById(id: number): Promise<ManualRow | null> {
   const sb = getClient();
   const { data, error } = await sb
@@ -110,6 +150,9 @@ export async function searchManuals(q: string, grade?: string, limit = 5): Promi
   let rows = (data as ManualRow[]) || [];
   const detected = grade || parseGradeFromQuery(q);
   if (detected) rows = rows.filter((r) => matchesGrade(r, detected));
+  if ((!rows || rows.length === 0) && detected && isGradeOnlyQuery(q)) {
+    rows = await fetchByGrade(detected, limit);
+  }
   return rows;
 }
 
@@ -121,6 +164,10 @@ export async function suggestManuals(q: string, limit = 20): Promise<Suggestion[
   let rows = (data as any[]) || [];
   const detected = parseGradeFromQuery(q);
   if (detected) rows = rows.filter((r: any) => matchesGrade(r as ManualRow, detected));
+  if ((!rows || rows.length === 0) && detected && isGradeOnlyQuery(q)) {
+    const fetched = await fetchByGrade(detected, limit);
+    rows = fetched.map((r) => ({ manual_id: r.manual_id, name_en: r.name_en, name_jp: r.name_jp, grade: r.grade }));
+  }
   return rows.map((r) => {
     const label = `${r.grade ? r.grade + ' ' : ''}${r.name_en || r.name_jp || 'Manual'} [${r.manual_id}]`;
     return { name: label, value: String(r.manual_id) };
