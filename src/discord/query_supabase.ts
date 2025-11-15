@@ -165,7 +165,7 @@ async function fetchByGrade(code: string, limit = 20): Promise<ManualRow[]> {
     .or(ors.join(','))
     .order('release_date', { ascending: false, nullsFirst: true })
     .order('manual_id', { ascending: false })
-    .limit(Math.max(1, Math.min(50, limit)));
+    .limit(Math.max(1, Math.min(200, limit)));
   if (error) throw error;
   const rows = (data as ManualRow[]) || [];
   return rows.filter((r) => matchesGrade(r, code));
