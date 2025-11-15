@@ -57,7 +57,7 @@ function gradeSynonyms(code: string): string[] {
   const c = code.toUpperCase();
   switch (c) {
     case 'EG':
-      return ['EG', 'ENTRY GRADE'];
+      return ['EG', 'ENTRY GRADE', 'ENTRYGRADE'];
     case 'HG':
       return ['HG', 'HIGH GRADE'];
     case 'MG':
@@ -89,7 +89,20 @@ function matchesGrade(row: ManualRow, code: string): boolean {
   if (syns.includes(g)) return true;
   const ne = (row.name_en || '').toUpperCase();
   const nj = (row.name_jp || '').toUpperCase();
-  return syns.some((s) => ne.includes(s) || nj.includes(s));
+  const containsToken = (text: string, token: string): boolean => {
+    const T = text.toUpperCase();
+    const tok = token.toUpperCase();
+    // Short codes like EG/HG/MG/RG/PG/SD: require non-alnum boundaries to avoid LEGEND, etc.
+    if (/^[A-Z]{1,3}$/.test(tok)) {
+      const re = new RegExp(`(^|[^A-Z0-9])${tok}([^A-Z0-9]|$)`);
+      return re.test(T);
+    }
+    // Multi-word tokens: accept with/without spaces
+    const noSpaceT = T.replace(/\s+/g, '');
+    const noSpaceTok = tok.replace(/\s+/g, '');
+    return T.includes(tok) || noSpaceT.includes(noSpaceTok);
+  };
+  return syns.some((s) => containsToken(ne, s) || containsToken(nj, s));
 }
 
 function isGradeOnlyQuery(q: string): boolean {
