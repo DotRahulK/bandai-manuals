@@ -51,12 +51,43 @@ function parseGradeFromQuery(q: string): string | null {
   return null;
 }
 
+function gradeSynonyms(code: string): string[] {
+  const c = code.toUpperCase();
+  switch (c) {
+    case 'EG':
+      return ['EG', 'ENTRY GRADE'];
+    case 'HG':
+      return ['HG', 'HIGH GRADE'];
+    case 'MG':
+      return ['MG', 'MASTER GRADE'];
+    case 'RG':
+      return ['RG', 'REAL GRADE'];
+    case 'PG':
+      return ['PG', 'PERFECT GRADE'];
+    case 'FM':
+      return ['FM', 'FULL MECHANICS', 'FULLMECHANICS'];
+    case 'RE/100':
+      return ['RE/100', 'RE 100', 'RE-100', 'RE:100'];
+    case 'SDCS':
+      return ['SDCS', 'SD CS'];
+    case 'MGEX':
+      return ['MGEX', 'MG EX'];
+    case 'MGSD':
+      return ['MGSD', 'MG SD'];
+    case 'SD':
+      return ['SD'];
+    default:
+      return [c];
+  }
+}
+
 function matchesGrade(row: ManualRow, code: string): boolean {
-  const target = code.toUpperCase();
-  if ((row.grade || '').toUpperCase() === target) return true;
+  const syns = gradeSynonyms(code);
+  const g = (row.grade || '').toUpperCase();
+  if (syns.includes(g)) return true;
   const ne = (row.name_en || '').toUpperCase();
   const nj = (row.name_jp || '').toUpperCase();
-  return ne.includes(target) || nj.includes(target);
+  return syns.some((s) => ne.includes(s) || nj.includes(s));
 }
 
 export async function getManualById(id: number): Promise<ManualRow | null> {
