@@ -193,8 +193,29 @@ export async function searchManuals(q: string, grade?: string, limit = 5): Promi
   if (error) throw error;
   let rows = (data as ManualRow[]) || [];
   if (detected) rows = rows.filter((r) => matchesGrade(r, detected));
-  if ((!rows || rows.length === 0) && detected && isGradeOnlyQuery(q)) {
-    rows = await fetchByGrade(detected, limit);
+  if ((!rows || rows.length === 0) && detected) {
+    const pool = await fetchByGrade(detected, 200);
+    const tokens = stripGradeTokens(q)
+      .toLowerCase()
+      .split(/\s+/)
+      .map((t) => t.trim())
+      .filter(Boolean);
+    if (tokens.length === 0) {
+      rows = pool.slice(0, limit);
+    } else {
+      let filtered = pool.filter((r) => {
+        const name = `${r.name_en || ''} ${r.name_jp || ''}`.toLowerCase();
+        return tokens.every((t) => name.includes(t));
+      });
+      if (filtered.length === 0) {
+        // fallback to any-token match to still suggest something relevant
+        filtered = pool.filter((r) => {
+          const name = `${r.name_en || ''} ${r.name_jp || ''}`.toLowerCase();
+          return tokens.some((t) => name.includes(t));
+        });
+      }
+      rows = filtered.slice(0, limit);
+    }
   }
   return rows;
 }
@@ -219,6 +240,12 @@ export async function suggestManuals(q: string, limit = 20): Promise<Suggestion[
         const name = `${r.name_en || ''} ${r.name_jp || ''}`.toLowerCase();
         return tokens.every((t) => name.includes(t));
       });
+      if (filtered.length === 0) {
+        filtered = pool.filter((r) => {
+          const name = `${r.name_en || ''} ${r.name_jp || ''}`.toLowerCase();
+          return tokens.some((t) => name.includes(t));
+        });
+      }
     }
     const rows = filtered.slice(0, Math.max(1, Math.min(20, limit)));
     return rows.map((r) => {
