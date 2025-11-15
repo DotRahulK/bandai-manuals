@@ -143,7 +143,7 @@ function isGradeOnlyQuery(q: string): boolean {
   return tokens.length === 0;
 }
 
-async function fetchByGrade(code: string, limit = 20): Promise<ManualRow[]> {
+async function fetchByGrade(code: string, limit = 2000): Promise<ManualRow[]> {
   const sb = getClient();
   const syns = gradeSynonyms(code);
   const ors: string[] = [];
@@ -161,7 +161,7 @@ async function fetchByGrade(code: string, limit = 20): Promise<ManualRow[]> {
     .or(ors.join(','))
     .order('release_date', { ascending: false, nullsFirst: true })
     .order('manual_id', { ascending: false })
-    .limit(Math.max(1, Math.min(200, limit)));
+    .limit(Math.max(1, Math.min(5000, limit)));
   if (error) throw error;
   const rows = (data as ManualRow[]) || [];
   return rows.filter((r) => matchesGrade(r, code));
@@ -184,13 +184,18 @@ export async function searchManuals(q: string, grade?: string, limit = 5): Promi
   const sb = getClient();
   const detected = grade || parseGradeFromQuery(q);
   const qCore = detected ? stripGradeTokens(q) : q;
-  const rpcLimit = detected ? 200 : Math.max(1, Math.min(25, limit));
+  const rpcLimit = detected ? 2000 : Math.max(1, Math.min(25, limit));
+  if (process.env.DEBUG_SUGGEST === '1') {
+    console.log('[bot.searchManuals] q=%s detected=%s qCore=%s rpcLimit=%d', q, detected ?? '—', qCore, rpcLimit);
+  }
   const { data, error } = await sb.rpc('search_manuals', { q: qCore, p_limit: rpcLimit });
   if (error) throw error;
   let rows = (data as ManualRow[]) || [];
   if (detected) rows = rows.filter((r) => matchesGrade(r, detected));
+  if (process.env.DEBUG_SUGGEST === '1') console.log('[bot.searchManuals] initial=%d after-grade=%d', (data as ManualRow[])?.length ?? 0, rows.length);
   if ((!rows || rows.length === 0) && detected) {
-    const pool = await fetchByGrade(detected, 200);
+    const pool = await fetchByGrade(detected, 2000);
+    if (process.env.DEBUG_SUGGEST === '1') console.log('[bot.searchManuals] fallback pool=%d', pool.length);
     const tokens = stripGradeTokens(q)
       .toLowerCase()
       .split(/\s+/)
@@ -203,15 +208,18 @@ export async function searchManuals(q: string, grade?: string, limit = 5): Promi
         const hay = `${r.grade || ''} ${r.name_en || ''} ${r.name_jp || ''}`.toLowerCase();
         return tokens.every((t) => hay.includes(t));
       });
+      if (process.env.DEBUG_SUGGEST === '1') console.log('[bot.searchManuals] strict(all tokens)=%d', filtered.length);
       if (filtered.length === 0) {
         filtered = pool.filter((r) => {
           const hay = `${r.grade || ''} ${r.name_en || ''} ${r.name_jp || ''}`.toLowerCase();
           return tokens.some((t) => hay.includes(t));
         });
+        if (process.env.DEBUG_SUGGEST === '1') console.log('[bot.searchManuals] any-token=%d', filtered.length);
       }
       rows = filtered.slice(0, limit);
     }
   }
+  if (process.env.DEBUG_SUGGEST === '1') console.log('[bot.searchManuals] final=%d', rows.length);
   return rows;
 }
 
@@ -221,7 +229,9 @@ export async function suggestManuals(q: string, limit = 20): Promise<Suggestion[
   const detected = parseGradeFromQuery(q);
   const qCore = detected ? stripGradeTokens(q) : q;
   if (detected) {
-    const pool = await fetchByGrade(detected, 200);
+    if (process.env.DEBUG_SUGGEST === '1') console.log('[bot.suggestManuals] q=%s detected=%s qCore=%s limit=%d', q, detected, qCore, limit);
+    const pool = await fetchByGrade(detected, 2000);
+    if (process.env.DEBUG_SUGGEST === '1') console.log('[bot.suggestManuals] grade-pool=%d', pool.length);
     const tokens = qCore
       .toLowerCase()
       .split(/\s+/)
@@ -233,8 +243,17 @@ export async function suggestManuals(q: string, limit = 20): Promise<Suggestion[
         const name = `${r.name_en || ''} ${r.name_jp || ''}`.toLowerCase();
         return tokens.every((t) => name.includes(t));
       });
+      if (process.env.DEBUG_SUGGEST === '1') console.log('[bot.suggestManuals] strict(all tokens)=%d', filtered.length);
+      if (filtered.length === 0) {
+        filtered = pool.filter((r) => {
+          const name = `${r.name_en || ''} ${r.name_jp || ''}`.toLowerCase();
+          return tokens.some((t) => name.includes(t));
+        });
+        if (process.env.DEBUG_SUGGEST === '1') console.log('[bot.suggestManuals] any-token=%d', filtered.length);
+      }
     }
     const rows = filtered.slice(0, Math.max(1, Math.min(20, limit)));
+    if (process.env.DEBUG_SUGGEST === '1') console.log('[bot.suggestManuals] final suggestions=%d', rows.length);
     return rows.map((r) => {
       const label = r.name_en || r.name_jp || `Manual ${r.manual_id}`;
       return { name: label, value: String(r.manual_id) };
@@ -244,6 +263,7 @@ export async function suggestManuals(q: string, limit = 20): Promise<Suggestion[
   const { data, error } = await sb.rpc('suggest_manuals', { q: qCore, p_limit: Math.max(1, Math.min(20, limit)) });
   if (error) throw error;
   const rows = (data as any[]) || [];
+  if (process.env.DEBUG_SUGGEST === '1') console.log('[bot.suggestManuals] rpc-only suggestions=%d', rows.length);
   return rows.map((r) => {
     const label = r.name_en || r.name_jp || `Manual ${r.manual_id}`;
     return { name: label, value: String(r.manual_id) };

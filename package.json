@@ -23,6 +23,7 @@
     "bot:register": "tsx src/discord/register.ts",
     "bot:dist": "npm run build && node dist/discord/bot.js",
     "bot:health": "tsx src/discord/health.ts",
+    "bot:debug-suggest": "npm --prefix bot run debug-suggest --",
     "supabase:sync": "tsx src/supabase_sync.ts",
     "supabase:upload": "tsx src/upload_to_supabase.ts",
     "supabase:transfer": "tsx src/transfer_to_supabase.ts",

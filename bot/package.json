@@ -10,7 +10,8 @@
     "dev": "tsx src/bot.ts",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/bot.js",
-    "register": "tsx src/register.ts"
+    "register": "tsx src/register.ts",
+    "debug-suggest": "tsx src/debug_suggest.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.4",
@@ -25,4 +26,3 @@
     "typescript": "^5.6.3"
   }
 }
-
