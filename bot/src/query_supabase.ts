@@ -184,7 +184,8 @@ export async function searchManuals(q: string, grade?: string, limit = 5): Promi
   const sb = getClient();
   const detected = grade || parseGradeFromQuery(q);
   const qCore = detected ? stripGradeTokens(q) : q;
-  const { data, error } = await sb.rpc('search_manuals', { q: qCore, p_limit: Math.max(1, Math.min(25, limit)) });
+  const rpcLimit = detected ? 200 : Math.max(1, Math.min(25, limit));
+  const { data, error } = await sb.rpc('search_manuals', { q: qCore, p_limit: rpcLimit });
   if (error) throw error;
   let rows = (data as ManualRow[]) || [];
   if (detected) rows = rows.filter((r) => matchesGrade(r, detected));
