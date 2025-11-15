@@ -71,6 +71,18 @@ function formatEmbed(m: SbQ.ManualRow) {
   return eb;
 }
 
+function sanitizeName(input: string): string {
+  return input
+    .replace(/[\/:*?"<>|]/g, '-')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function makeFileBase(row: SbQ.ManualRow): string {
+  const name = sanitizeName(row.name_en || row.name_jp || 'manual');
+  return `${row.manual_id}-${name}`;
+}
+
 async function handleManual(interaction: ChatInputCommandInteraction) {
   const qVal = interaction.options.getString('q', true);
   const attachOpt = interaction.options.getBoolean('attach') ?? false;
@@ -90,6 +102,7 @@ async function handleManual(interaction: ChatInputCommandInteraction) {
 
   const eb = formatEmbed(row);
   let abs: string | null = null;
+  const attachBase = makeFileBase(row);
 
   // Local optional
   if (ATTACH_IF_LOCAL && row.pdf_local_path) {
@@ -105,8 +118,8 @@ async function handleManual(interaction: ChatInputCommandInteraction) {
     if (!Number.isNaN(size) && size > 0 && size <= ATTACH_MAX_BYTES) {
       const tmp = path.join(process.cwd(), '.tmp');
       await fs.promises.mkdir(tmp, { recursive: true });
-      const out = path.join(tmp, `${row!.manual_id}.pdf`);
-      await http.download(url, tmp, `${row!.manual_id}.pdf`);
+      const out = path.join(tmp, `${attachBase}.pdf`);
+      await http.download(url, tmp, `${attachBase}.pdf`);
       return out;
     }
     return null;
@@ -131,7 +144,7 @@ async function handleManual(interaction: ChatInputCommandInteraction) {
     try {
       const stat = fs.statSync(abs);
       if (stat.size <= ATTACH_MAX_BYTES) {
-        const name = path.basename(abs) || `${row.manual_id}.pdf`;
+        const name = `${attachBase}.pdf`;
         files = [new AttachmentBuilder(abs, { name })];
       }
     } catch {}
